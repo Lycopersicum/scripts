@@ -1,0 +1,93 @@
+#!/bin/bash
+# 
+# Author: Lycopersicum
+#
+# This script swaps screen outputs configurations.
+#
+# ONLY ONE external output is currently supported:
+# only switching between internal screen outputs.
+#
+
+outputs_list="$( xrandr | grep -i " connected" | awk '{print $1}' )"
+all_outputs_list="$( xrandr | grep -i "connected" | awk '{print $1}' )"
+outputs_count="$( echo "${outputs_list}" | wc -l )"
+
+TMP_FILE="/tmp/screen_output_configuration_mode"
+
+# Selects first output from xrandr
+INTERNAL_OUTPUT="$( echo "${outputs_list}" | head -n 1 )"
+EXTERNAL_OUTPUT="$( echo "${outputs_list}" | head -n 2 | tail -n 1 )"
+
+turn_off_all_outputs () {
+    # Turn OFF all outputs, except INTERNAL_OUTPUT.
+    xrandr_args=""
+    for output in ${all_outputs_list}; do
+        if [ "${output}"  = "${INTERNAL_OUTPUT}" ]; then
+            echo "turning on ${output}"
+            xrandr_args="${xrandr_args} --output ${output} --auto"
+        else
+            echo "turning off ${output}"
+            xrandr_args="${xrandr_args} --output ${output} --off"
+    	fi
+    done
+
+    eval "xrandr ${xrandr_args} && rm ${TMP_FILE}"
+
+	return $?
+}
+
+swap_configuration_of_outputs () {
+    # Swap outputs set-ups configurations
+    # between INTERNAL_OUTPUT and EXTERNAL_OUTPUT.
+
+    xrandr_args=""
+
+	# if we don't have a file, set to INTERNAL configuration
+    if [ ! -f "${TMP_FILE}" ] ; then
+        output_mode="INTERNAL"
+    # otherwise read current configuration
+    else
+        output_mode=$( eval "cat ${TMP_FILE}" )
+    fi
+    
+    # Loop through configurations: INTERNAL -> ALL -> EXTERNAL -> # CLONES
+    if [ "${output_mode}" = "INTERNAL" ]; then
+        output_mode="ALL"
+
+        xrandr_args="${xrandr_args} --output ${INTERNAL_OUTPUT} --auto"
+	   	xrandr_args="${xrandr_args} --output ${EXTERNAL_OUTPUT} --auto --above ${INTERNAL_OUTPUT}"
+    elif [ "${output_mode}" = "ALL" ] ; then
+        output_mode="EXTERNAL"
+
+        xrandr_args="${xrandr_args} --output ${INTERNAL_OUTPUT} --off"
+	   	xrandr_args="${xrandr_args} --output ${EXTERNAL_OUTPUT} --auto"
+    elif [ "${output_mode}" = "EXTERNAL" ]; then
+        output_mode="CLONES"
+    
+        xrandr_args="${xrandr_args} --output ${INTERNAL_OUTPUT} --auto"
+        xrandr_args="${xrandr_args} --output ${EXTERNAL_OUTPUT} --auto --same-as ${INTERNAL_OUTPUT}"
+    else
+        output_mode="INTERNAL"
+
+        xrandr_args="${xrandr_args} --output ${INTERNAL_OUTPUT} --auto"
+	   	xrandr_args="${xrandr_args} --output ${EXTERNAL_OUTPUT} --off"
+    fi
+    eval "xrandr ${xrandr_args} && echo \"${output_mode}\" > ${TMP_FILE}"
+
+	return $?
+}
+
+# IF only INTERNAL output is detected as connected,
+# turn all external outputs off and clear configuration
+if [ "${outputs_count}" = "1" ]; then
+    turn_off_all_outputs &&
+	exit 0
+fi
+
+# IF swapping configuration is successful, exit script with status 0
+# ELSE turn all possible external outputs off and clear configuration
+while :; do
+    swap_configuration_of_outputs \
+    || turn_off_all_outputs \
+	&& exit 0
+done
